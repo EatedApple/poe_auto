@@ -211,11 +211,44 @@ class HardwareLevelDragMacro:
         self.drag_rect = None
         self.dragging = False
         
+        # 전역 키보드 이벤트 추가 (keyboard 라이브러리 사용)
+        # ESC 키를 감지하는 별도의 이벤트 핸들러 추가
+        def esc_handler():
+            print("ESC 키가 눌림")  # 디버깅용
+            self.overlay.destroy()
+            self.root.deiconify()
+            self.root.focus_force()
+            self.status_label.config(text="영역 선택 취소됨")
+            
+        # 기존 ESC 핫키 제거 후 다시 등록
+        try:
+            keyboard.remove_hotkey('esc')
+        except:
+            pass
+        keyboard.add_hotkey('esc', esc_handler)
+        
         # 이벤트 바인딩
         self.overlay.bind("<ButtonPress-1>", self.on_drag_start)
         self.overlay.bind("<B1-Motion>", self.on_drag_motion)
         self.overlay.bind("<ButtonRelease-1>", self.on_drag_release)
-        self.overlay.bind("<Escape>", lambda e: self.cancel_selection())
+        
+        # 추가: 오버레이 창에 키보드 이벤트도 바인딩 (belt and suspenders 방식)
+        self.overlay.bind("<Escape>", lambda e: esc_handler())
+        
+        # 창에 포커스 설정
+        self.overlay.focus_set()
+
+    def cancel_selection(self, event=None):
+        """선택 취소"""
+        print("cancel_selection 호출됨")  # 디버깅용
+        if hasattr(self, 'overlay') and self.overlay.winfo_exists():
+            self.overlay.destroy()
+        self.root.deiconify()
+        self.root.focus_force()
+        self.status_label.config(text="영역 선택 취소됨")
+        
+    # 기존 코드 계속...    
+  
 
     def on_drag_start(self, event):
         """드래그 시작"""
@@ -428,13 +461,7 @@ class HardwareLevelDragMacro:
         except Exception as e:
             print(f"캔버스 업데이트 오류: {e}")
     
-    def cancel_selection(self):
-        """선택 취소"""
-        if hasattr(self, 'overlay') and self.overlay.winfo_exists():
-            self.overlay.destroy()
-        self.root.deiconify()
-        self.status_label.config(text="영역 선택 취소됨")
-        
+
     def find_path_of_exile_window(self):
         """Path of Exile 창 찾기"""
         try:
