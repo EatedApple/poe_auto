@@ -10,6 +10,7 @@ import random
 import pygetwindow as gw
 from PIL import ImageGrab, Image, ImageTk
 import numpy as np
+import socket
 
 class HardwareLevelDragMacro:
     def __init__(self):
@@ -26,7 +27,10 @@ class HardwareLevelDragMacro:
         self.macro_tk_image = None
         self.is_running = False
         self.dragging = False
-        self.similarity_threshold = 50  # 이미지 유사성 임계값 (낮을수록 더 엄격함)
+        self.similarity_threshold = 0  # 이미지 유사성 임계값 (낮을수록 더 엄격함)
+        self.run_hotkey = "f6"  # 실행 단축키 기본값
+        self.stop_hotkey = "f7"  # 중지 단축키 기본값
+        self.registered_hotkeys = {}  # 등록된 단축키 추적을 위한 딕셔너리
         
         # 기본 설정 로드
         self.load_config()
@@ -45,6 +49,8 @@ class HardwareLevelDragMacro:
                     self.excluded_cells = config.get('excluded_cells', [])
                     self.inventory_image_path = config.get('inventory_image_path')
                     self.similarity_threshold = config.get('similarity_threshold', 50)
+                    self.run_hotkey = config.get('run_hotkey', 'f6')
+                    self.stop_hotkey = config.get('stop_hotkey', 'f7')
             except Exception as e:
                 print(f"설정 로드 오류: {e}")
     
@@ -55,7 +61,9 @@ class HardwareLevelDragMacro:
             'end_pos': self.end_pos,
             'excluded_cells': self.excluded_cells,
             'inventory_image_path': self.inventory_image_path,
-            'similarity_threshold': self.similarity_threshold
+            'similarity_threshold': self.similarity_threshold,
+            'run_hotkey': self.run_hotkey,
+            'stop_hotkey': self.stop_hotkey
         }
         try:
             with open(self.config_file, 'w') as f:
@@ -120,6 +128,28 @@ class HardwareLevelDragMacro:
         self.status_label = tk.Label(self.root, text="빈 인벤토리 영역을 선택하세요")
         self.status_label.pack(padx=10, pady=5)
         
+        # 단축키 설정 프레임
+        hotkey_frame = tk.LabelFrame(self.root, text="단축키 설정", padx=5, pady=5)
+        hotkey_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # 실행 단축키
+        run_frame = tk.Frame(hotkey_frame)
+        run_frame.pack(fill=tk.X, pady=2)
+        tk.Label(run_frame, text="실행 단축키:").pack(side=tk.LEFT, padx=5)
+        self.run_hotkey_label = tk.Label(run_frame, text=self.run_hotkey.upper(), width=8, 
+                                    relief=tk.SUNKEN, bg="white", padx=5)
+        self.run_hotkey_label.pack(side=tk.LEFT, padx=5)
+        tk.Button(run_frame, text="변경", command=lambda: self.set_hotkey("run")).pack(side=tk.LEFT)
+
+        # 중지 단축키
+        stop_frame = tk.Frame(hotkey_frame)
+        stop_frame.pack(fill=tk.X, pady=2)
+        tk.Label(stop_frame, text="중지 단축키:").pack(side=tk.LEFT, padx=5)
+        self.stop_hotkey_label = tk.Label(stop_frame, text=self.stop_hotkey.upper(), width=8, 
+                                     relief=tk.SUNKEN, bg="white", padx=5)
+        self.stop_hotkey_label.pack(side=tk.LEFT, padx=5)
+        tk.Button(stop_frame, text="변경", command=lambda: self.set_hotkey("stop")).pack(side=tk.LEFT)
+
         # 클릭 설정
         settings_frame = tk.Frame(self.root)
         settings_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -174,10 +204,142 @@ class HardwareLevelDragMacro:
         tk.Button(excluded_frame, text="목록 초기화", command=self.clear_excluded).grid(row=0, column=2, padx=5)
         
         # 단축키 등록
-        keyboard.add_hotkey('f6', self.run_macro)
-        keyboard.add_hotkey('f7', self.stop_macro)
+        self.register_hotkeys()
+        
+        # 종료 시 정리 작업 설정
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
         self.root.mainloop()
+    
+    def set_hotkey(self, hotkey_type):
+        """단축키 설정"""
+        # 단축키 설정 창 생성
+        dialog = tk.Toplevel(self.root)
+        dialog.title("단축키 설정")
+        dialog.geometry("300x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # 안내 메시지
+        if hotkey_type == "run":
+            message = "실행 단축키로 사용할 키를 누르세요"
+        else:
+            message = "중지 단축키로 사용할 키를 누르세요"
+            
+        tk.Label(dialog, text=message, pady=10).pack()
+        
+        # 선택된 키 표시
+        key_label = tk.Label(dialog, text="", font=("Arial", 14))
+        key_label.pack(pady=10)
+        
+        # 키 입력 이벤트 처리
+        def on_key_press(event):
+            # 특수 키 매핑
+            key_mapping = {
+                "Return": "enter",
+                "Escape": "esc",
+                "Delete": "delete",
+                "BackSpace": "backspace",
+                "Tab": "tab",
+                "space": "space",
+                "F1": "f1", "F2": "f2", "F3": "f3", "F4": "f4", "F5": "f5",
+                "F6": "f6", "F7": "f7", "F8": "f8", "F9": "f9", "F10": "f10",
+                "F11": "f11", "F12": "f12"
+            }
+            
+            key = event.keysym
+            
+            # 특수 키 변환
+            if key in key_mapping:
+                key = key_mapping[key]
+            else:
+                # 일반 키는 소문자로 변환
+                key = key.lower()
+                
+            key_label.config(text=key)
+            
+            # 확인 버튼 활성화
+            confirm_button.config(state=tk.NORMAL)
+            
+            # 선택된 키 저장
+            dialog.selected_key = key
+        
+        dialog.selected_key = None
+        dialog.bind("<KeyPress>", on_key_press)
+        
+        # 확인 버튼
+        def confirm():
+            if dialog.selected_key:
+                if hotkey_type == "run":
+                    self.run_hotkey = dialog.selected_key
+                    self.run_hotkey_label.config(text=dialog.selected_key.upper())
+                else:
+                    self.stop_hotkey = dialog.selected_key
+                    self.stop_hotkey_label.config(text=dialog.selected_key.upper())
+                    
+                # 단축키 저장 및 적용
+                self.save_config()
+                self.register_hotkeys()
+                
+                # 버튼 텍스트 업데이트
+                self.run_btn.config(text=f"매크로 실행 ({self.run_hotkey.upper()})")
+                self.stop_btn.config(text=f"매크로 중지 ({self.stop_hotkey.upper()})")
+                
+            dialog.destroy()
+        
+        # 취소 버튼
+        def cancel():
+            dialog.destroy()
+        
+        # 버튼 프레임
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(side=tk.BOTTOM, pady=10)
+        
+        confirm_button = tk.Button(button_frame, text="확인", command=confirm, state=tk.DISABLED)
+        confirm_button.pack(side=tk.LEFT, padx=10)
+        
+        tk.Button(button_frame, text="취소", command=cancel).pack(side=tk.LEFT)
+        
+        # 창에 포커스
+        dialog.focus_force()
+ 
+    def register_hotkeys(self):
+        """단축키 등록"""
+        try:
+            # 기존 단축키 해제
+            self.unregister_hotkeys()
+            
+            # 새 단축키 등록 (suppress=True: 다른 앱으로 전파되지 않음)
+            keyboard.add_hotkey(self.run_hotkey, self.run_macro, suppress=True)
+            keyboard.add_hotkey(self.stop_hotkey, self.stop_macro, suppress=True)
+            
+            self.registered_hotkeys = {
+                'run': self.run_hotkey,
+                'stop': self.stop_hotkey
+            }
+            print(f"단축키 등록 완료: 실행={self.run_hotkey}, 중지={self.stop_hotkey}")
+        except Exception as e:
+            print(f"단축키 등록 오류: {e}")
+    
+    def unregister_hotkeys(self):
+        """단축키 해제"""
+        try:
+            # 이전에 등록된 단축키 제거
+            if 'run' in self.registered_hotkeys:
+                keyboard.remove_hotkey(self.registered_hotkeys['run'])
+            if 'stop' in self.registered_hotkeys:
+                keyboard.remove_hotkey(self.registered_hotkeys['stop'])
+            print("단축키 해제됨")
+        except Exception as e:
+            print(f"단축키 해제 오류: {e}")
+            
+    def on_close(self):
+        """프로그램 종료 시 처리"""
+        # 단축키 정리
+        self.unregister_hotkeys()
+        # 창 종료
+        self.root.destroy()
     
     def select_area(self):
         """영역 선택 모드 시작"""
@@ -211,28 +373,34 @@ class HardwareLevelDragMacro:
         self.drag_rect = None
         self.dragging = False
         
-        # 전역 키보드 이벤트 추가 (keyboard 라이브러리 사용)
-        # ESC 키를 감지하는 별도의 이벤트 핸들러 추가
+        # ESC 핸들러 수정 - 창 자동 활성화 문제 해결
         def esc_handler():
-            print("ESC 키가 눌림")  # 디버깅용
-            self.overlay.destroy()
+            print("ESC 키가 눌림")
+            if hasattr(self, 'overlay') and self.overlay.winfo_exists():
+                self.overlay.destroy()
+            
+            # ESC 눌렀을 때 항상 창이 나타나지 않도록 수정
+            # 원래 코드에서는 self.root.deiconify()가 무조건 호출되었지만,
+            # 이제는 overlay가 실제로 존재하고 닫힐 때만 메인 창이 나타남
             self.root.deiconify()
             self.root.focus_force()
             self.status_label.config(text="영역 선택 취소됨")
             
-        # 기존 ESC 핫키 제거 후 다시 등록
+        # 기존 ESC 핫키 제거 후 다시 등록 (충돌 방지)
         try:
             keyboard.remove_hotkey('esc')
         except:
             pass
-        keyboard.add_hotkey('esc', esc_handler)
+        
+        # ESC 단축키는 영역 선택 모드일 때만 특별히 등록
+        keyboard.add_hotkey('esc', esc_handler, suppress=True)
         
         # 이벤트 바인딩
         self.overlay.bind("<ButtonPress-1>", self.on_drag_start)
         self.overlay.bind("<B1-Motion>", self.on_drag_motion)
         self.overlay.bind("<ButtonRelease-1>", self.on_drag_release)
         
-        # 추가: 오버레이 창에 키보드 이벤트도 바인딩 (belt and suspenders 방식)
+        # ESC 키보드 이벤트도 바인딩
         self.overlay.bind("<Escape>", lambda e: esc_handler())
         
         # 창에 포커스 설정
@@ -240,16 +408,13 @@ class HardwareLevelDragMacro:
 
     def cancel_selection(self, event=None):
         """선택 취소"""
-        print("cancel_selection 호출됨")  # 디버깅용
+        print("cancel_selection 호출됨")
         if hasattr(self, 'overlay') and self.overlay.winfo_exists():
             self.overlay.destroy()
         self.root.deiconify()
         self.root.focus_force()
         self.status_label.config(text="영역 선택 취소됨")
         
-    # 기존 코드 계속...    
-  
-
     def on_drag_start(self, event):
         """드래그 시작"""
         self.drag_start_x = event.x
@@ -548,6 +713,13 @@ class HardwareLevelDragMacro:
         if self.is_running:
             return
         
+        # 현재 포커스된 창 확인 (디버깅용)
+        try:
+            focused_window = gw.getActiveWindow()
+            print(f"현재 포커스된 창: {focused_window.title}")
+        except Exception as e:
+            print(f"활성 창 확인 오류: {e}")
+        
         # 임계값 설정 저장
         self.similarity_threshold = self.threshold_slider.get()
         self.save_config()
@@ -560,6 +732,15 @@ class HardwareLevelDragMacro:
         self.is_running = True
         self.run_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
+        
+        # F6 실행 단축키만 해제하고 F7 중지 단축키는 유지
+        try:
+            if 'run' in self.registered_hotkeys:
+                keyboard.remove_hotkey(self.registered_hotkeys['run'])
+            # F7은 항상 새로 등록해서 확실히 작동하도록 함
+            keyboard.add_hotkey('f7', self.stop_macro, suppress=True)
+        except Exception as e:
+            print(f"단축키 관리 오류: {e}")
         
         # 실행 스레드 시작
         macro_thread = threading.Thread(target=self._run_macro_thread, daemon=True)
@@ -765,9 +946,14 @@ class HardwareLevelDragMacro:
             self.run_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             
+            # 단축키 다시 등록
+            self.register_hotkeys()
+            
     def stop_macro(self):
         """매크로 중지"""
+        print("매크로 중지 함수 호출됨")
         if not self.is_running:
+            print("이미 중지된 상태")
             return
             
         self.is_running = False
@@ -782,6 +968,11 @@ class HardwareLevelDragMacro:
         # 버튼 상태 업데이트
         self.run_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
+        
+        # 단축키 다시 등록 (매크로 실행 중 해제된 경우 대비)
+        self.register_hotkeys()
+        
+        print("매크로 중지 완료")
     
     def _calculate_random_click_point(self, base_x, base_y, cell_width, cell_height):
         """
@@ -816,12 +1007,39 @@ class HardwareLevelDragMacro:
         self.excluded_cells = []
         self.excluded_label.config(text="[]")
         self.save_config()
+        
+        
+    # 앱 싱글 인스턴스 보장을 위한 클래스
+class SingleInstanceApp:
+    def __init__(self):
+        import socket
+        self.lock_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # 5000 포트에 바인딩 시도
+            self.lock_socket.bind(('localhost', 5000))
+            print("프로그램 새 인스턴스 시작됨")
+            self.is_running_already = False
+        except socket.error:
+            print("이미 다른 인스턴스가 실행 중입니다")
+            self.is_running_already = True
 
 # 메인 실행 부분
 if __name__ == "__main__":
     try:
         print("하드웨어 수준 Path of Exile 클릭 매크로를 시작합니다...")
-        print("F6: 매크로 실행, F7: 매크로 중지")
+        
+        # 싱글 인스턴스 확인
+        single_instance = SingleInstanceApp()
+        if single_instance.is_running_already:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showwarning("경고", "이미 프로그램이 실행 중입니다.\n기존 창을 확인하세요.")
+            root.destroy()
+            import sys
+            sys.exit(0)
+        
+        # 프로그램 시작
+        print(f"단축키 정보: F6=매크로 실행, F7=매크로 중지")
         HardwareLevelDragMacro()
     except Exception as e:
         # 오류 로깅
