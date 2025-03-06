@@ -32,6 +32,10 @@ class HardwareLevelDragMacro:
         self.stop_hotkey = "f7"  # 중지 단축키 기본값
         self.registered_hotkeys = {}  # 등록된 단축키 추적을 위한 딕셔너리
         self.polling_active = False
+        self._click_delay_value = 0.1
+        self._use_ctrl_click_value = True
+        self._minimize_window_value = False
+        self._detect_items_value = True
         
         # 기본 설정 로드
         self.load_config()
@@ -52,6 +56,11 @@ class HardwareLevelDragMacro:
                     self.similarity_threshold = config.get('similarity_threshold', 50)
                     self.run_hotkey = config.get('run_hotkey', 'f6')
                     self.stop_hotkey = config.get('stop_hotkey', 'f7')
+                    # 임시 변수에 설정값 저장
+                    self._click_delay_value = config.get('click_delay', 0.1)
+                    self._use_ctrl_click_value = config.get('use_ctrl_click', True)
+                    self._minimize_window_value = config.get('minimize_window', False)
+                    self._detect_items_value = config.get('detect_items', True)
             except Exception as e:
                 print(f"설정 로드 오류: {e}")
     
@@ -64,7 +73,12 @@ class HardwareLevelDragMacro:
             'inventory_image_path': self.inventory_image_path,
             'similarity_threshold': self.similarity_threshold,
             'run_hotkey': self.run_hotkey,
-            'stop_hotkey': self.stop_hotkey
+            'stop_hotkey': self.stop_hotkey,
+            # Tkinter 변수는 .get()으로 실제 값을 가져와야 함
+            'click_delay': float(self.click_delay.get()),
+            'use_ctrl_click': bool(self.use_ctrl_click.get()),
+            'minimize_window': bool(self.minimize_window.get()),
+            'detect_items': bool(self.detect_items.get())
         }
         try:
             with open(self.config_file, 'w') as f:
@@ -77,6 +91,12 @@ class HardwareLevelDragMacro:
         self.root = tk.Tk()
         self.root.title("하드웨어 수준 Path of Exile 매크로")
         self.root.geometry("500x700")  # 창 크기 줄임
+        
+        # 여기서 Tkinter 변수 초기화
+        self.click_delay = tk.DoubleVar(value=self._click_delay_value)
+        self.use_ctrl_click = tk.BooleanVar(value=self._use_ctrl_click_value)
+        self.minimize_window = tk.BooleanVar(value=self._minimize_window_value)
+        self.detect_items = tk.BooleanVar(value=self._detect_items_value)
         
         # 인벤토리 이미지 선택 프레임
         image_select_frame = tk.Frame(self.root)
@@ -154,28 +174,40 @@ class HardwareLevelDragMacro:
         # 클릭 설정
         settings_frame = tk.Frame(self.root)
         settings_frame.pack(fill=tk.X, padx=10, pady=5)
-        
+    
         tk.Label(settings_frame, text="클릭 간격(초):").grid(row=0, column=0, sticky=tk.W)
-        self.click_delay = tk.DoubleVar(value=0.1)
-        tk.Entry(settings_frame, textvariable=self.click_delay, width=5).grid(row=0, column=1, sticky=tk.W, padx=5)
+        #self.click_delay = tk.DoubleVar(value=0.1)
+    
+        # 여기를 수정: FocusOut 이벤트에 save_config 연결
+        click_delay_entry = tk.Entry(settings_frame, textvariable=self.click_delay, width=5)
+        click_delay_entry.grid(row=0, column=1, sticky=tk.W, padx=5)
+        click_delay_entry.bind("<FocusOut>", lambda event: self.save_config())
         
+        # 여기를 수정: command에 save_config 연결
         self.use_ctrl_click = tk.BooleanVar(value=True)
-        tk.Checkbutton(settings_frame, text="Ctrl 키 유지", variable=self.use_ctrl_click).grid(row=0, column=2, sticky=tk.W, padx=10)
+        tk.Checkbutton(settings_frame, text="Ctrl 키 유지", variable=self.use_ctrl_click, 
+                    command=self.save_config).grid(row=0, column=2, sticky=tk.W, padx=10)
         
-        # 창 최소화 설정 추가
+        # 여기를 수정: command에 save_config 연결
         self.minimize_window = tk.BooleanVar(value=False)
-        tk.Checkbutton(settings_frame, text="실행 시 창 최소화", variable=self.minimize_window).grid(row=0, column=3, sticky=tk.W, padx=10)
+        tk.Checkbutton(settings_frame, text="실행 시 창 최소화", variable=self.minimize_window,
+                    command=self.save_config).grid(row=0, column=3, sticky=tk.W, padx=10)
         
         # 이미지 비교 설정 프레임
         compare_frame = tk.Frame(self.root)
         compare_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        # 여기를 수정: command에 save_config 연결
         self.detect_items = tk.BooleanVar(value=True)
-        tk.Checkbutton(compare_frame, text="아이템 감지 (빈 인벤토리와 비교)", variable=self.detect_items).grid(row=0, column=0, sticky=tk.W)
+        tk.Checkbutton(compare_frame, text="아이템 감지 (빈 인벤토리와 비교)", 
+                    variable=self.detect_items, command=self.save_config).grid(row=0, column=0, sticky=tk.W)
         
         tk.Label(compare_frame, text="유사도 임계값:").grid(row=0, column=1, sticky=tk.W, padx=10)
+    
+        # 여기를 수정: command에 save_config 연결
         self.threshold_slider = tk.Scale(compare_frame, from_=0, to=100, orient=tk.HORIZONTAL, 
-                                        variable=tk.IntVar(value=self.similarity_threshold))
+                                        variable=tk.IntVar(value=self.similarity_threshold),
+                                        command=lambda val: self.save_config())
         self.threshold_slider.grid(row=0, column=2, sticky=tk.W)
         self.threshold_slider.set(self.similarity_threshold)
         
