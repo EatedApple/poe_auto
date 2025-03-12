@@ -1004,6 +1004,19 @@ class ProductMonitor:
 팀원에게 보내기
 https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=e6f5886762862a7042ae5b867b615b6a&redirect_uri=https://eateapple.xyz/kakao-redirect.html&scope=profile_nickname,talk_message,friends
 위의 URL을 팀원이 접속해서 권한동의를해야함.
+
+settings.json
+{
+  "check_interval": 60,
+  "notification_enabled": true,
+  "kakao_token": "c0TVX4Ls3uzrw2n9wbVNpfDLgM_V3_esAAAAAQo9c-sAAAGViSR5HpIGkKnmukNu",
+  "kakao_refresh_token": "bPu_7IJ5EhjxRfnZINJhUziwOrJlu2IMAAAAAgo9c-sAAAGViSR5FpIGkKnmukNu",
+  "kakao_token_expires_at": 1741783623,
+  "kakao_client_id": "e6f5886762862a7042ae5b867b615b6a",
+  "kakao_client_secret": "C9IwRg0bP2Dq3WQLnh2muztGekuZxHMw",
+  "kakao_auth_code": "mT2Yeb1jpqvCwGl875Xde2HKUXDGjL_888UY8tOd7v3RPEjDUiHI8wAAAAQKPXMYAAABlYkkU4-2xj-RG-1vuA"
+}
+
         """
         
         info_window = tk.Toplevel(self.root)
